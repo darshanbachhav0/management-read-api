@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: uma-management-read-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FINANCE_REQUIRED_ROLE
+        value: MANAGEMENT
+      - key: RATE_LIMIT_PER_MINUTE
+        value: 120
+      - key: CACHE_TTL_SECONDS
+        value: 30
+      - key: REQUEST_TIMEOUT_MS
+        value: 10000
+      - key: FINANCE_API_BASE_URL
+        sync: false
+      - key: FINANCE_SERVICE_EMAIL
+        sync: false
+      - key: FINANCE_SERVICE_PASSWORD
+        sync: false
+      - key: VIEWER_API_KEYS
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false

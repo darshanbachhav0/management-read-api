@@ -1,0 +1,134 @@
+openapi: 3.0.3
+info:
+  title: UMA Management Read API
+  version: 1.1.0
+  description: Read-only external API for UMA Finance Management dashboard and management-report data.
+servers:
+  - url: https://YOUR-RENDER-SERVICE.onrender.com
+security:
+  - ApiKeyAuth: []
+paths:
+  /:
+    get:
+      security: []
+      summary: Built-in read-only viewer
+      responses:
+        '200':
+          description: HTML Management viewer
+  /health:
+    get:
+      security: []
+      summary: Gateway health
+      responses:
+        '200':
+          description: Gateway process is healthy
+  /ready:
+    get:
+      security: []
+      summary: Gateway and Finance-backend readiness
+      responses:
+        '200':
+          description: Finance backend reachable and Management service account authenticated
+        '503':
+          description: Upstream unavailable or authentication failed
+  /api/v1/management/dashboard:
+    get:
+      summary: Management dashboard data
+      responses:
+        '200':
+          description: Management dashboard payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+        '401':
+          description: Missing or invalid viewer API key
+  /api/v1/management/report:
+    get:
+      summary: Full management-report dataset
+      parameters:
+        - $ref: '#/components/parameters/Period'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - $ref: '#/components/parameters/Currency'
+        - $ref: '#/components/parameters/RequestType'
+        - $ref: '#/components/parameters/Area'
+        - $ref: '#/components/parameters/CostCenter'
+        - $ref: '#/components/parameters/Project'
+      responses:
+        '200':
+          description: Management report payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+  /api/v1/management/filters:
+    get:
+      summary: Available report filter values
+      responses:
+        '200':
+          description: Filter options
+  /api/v1/management/snapshot:
+    get:
+      summary: Dashboard and management report in one response
+      parameters:
+        - $ref: '#/components/parameters/Period'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+        - $ref: '#/components/parameters/Currency'
+        - $ref: '#/components/parameters/RequestType'
+        - $ref: '#/components/parameters/Area'
+        - $ref: '#/components/parameters/CostCenter'
+        - $ref: '#/components/parameters/Project'
+      responses:
+        '200':
+          description: Combined read-only snapshot
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+        meta:
+          type: object
+          additionalProperties: true
+  parameters:
+    Period:
+      name: period
+      in: query
+      schema: { type: string, pattern: '^\\d{4}-\\d{2}$' }
+    DateFrom:
+      name: dateFrom
+      in: query
+      schema: { type: string, format: date }
+    DateTo:
+      name: dateTo
+      in: query
+      schema: { type: string, format: date }
+    Currency:
+      name: currency
+      in: query
+      schema: { type: string, enum: [PEN, USD] }
+    RequestType:
+      name: requestType
+      in: query
+      schema: { type: string }
+    Area:
+      name: area
+      in: query
+      schema: { type: string }
+    CostCenter:
+      name: costCenter
+      in: query
+      schema: { type: string }
+    Project:
+      name: project
+      in: query
+      schema: { type: string }

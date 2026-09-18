@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>UMA Management Read API</title>
+  <style>
+    :root{color-scheme:light;--bg:#f4f7fb;--panel:#fff;--text:#132238;--muted:#64748b;--border:#dce4ee;--accent:#0b63ce;--ok:#177245;--danger:#b42318}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:30px 0 48px}.hero{display:flex;gap:20px;align-items:flex-start;justify-content:space-between;margin-bottom:22px}.hero h1{font-size:clamp(1.65rem,3vw,2.25rem);margin:0 0 8px}.hero p{margin:0;color:var(--muted);max-width:760px;line-height:1.55}.badge{display:inline-flex;align-items:center;gap:8px;padding:8px 11px;border-radius:999px;background:#e8f5ed;color:var(--ok);font-weight:700;font-size:.85rem;white-space:nowrap}.panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:18px;margin-top:16px}.panel h2{font-size:1.05rem;margin:0 0 14px}.controls{display:grid;grid-template-columns:minmax(220px,1.4fr) minmax(220px,1.4fr) minmax(130px,.6fr) auto;gap:10px}.controls input,.controls button{min-height:44px;border-radius:9px;font:inherit}.controls input{border:1px solid #c9d4e2;padding:10px 12px;background:#fff;color:var(--text)}.controls button{border:0;background:var(--accent);color:#fff;padding:10px 18px;font-weight:700;cursor:pointer}.controls button:disabled{opacity:.6;cursor:not-allowed}.status{margin:12px 0 0;color:var(--muted);font-size:.92rem}.status.error{color:var(--danger)}.status.ok{color:var(--ok)}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:11px;margin-top:16px}.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px}.card span{display:block;color:var(--muted);font-size:.82rem}.card b{display:block;margin-top:6px;font-size:1.25rem;overflow-wrap:anywhere}.endpoint-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}.endpoint{border:1px solid var(--border);border-radius:10px;padding:12px;background:#fbfcfe}.endpoint code{display:block;margin-top:5px;color:#243b53;word-break:break-all}.raw{max-height:520px;overflow:auto;background:#0f172a;color:#d8e3f0;border-radius:10px;padding:14px;font-size:.82rem;line-height:1.45;white-space:pre-wrap;word-break:break-word}.meta{font-size:.84rem;color:var(--muted)}a{color:var(--accent)}@media(max-width:760px){.wrap{width:min(100% - 20px,1180px);padding-top:18px}.hero{flex-direction:column}.controls{grid-template-columns:1fr}.panel{padding:14px}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="hero">
+      <div>
+        <h1>UMA Management Read API</h1>
+        <p>Read-only gateway for the UMA Finance Management dashboard and management-report data. This service exposes visualization data only; financial mutations are not available.</p>
+      </div>
+      <div class="badge">Read only</div>
+    </div>
+
+    <section class="panel">
+      <h2>Test the Management snapshot</h2>
+      <form class="controls" id="viewerForm">
+        <input id="baseUrl" aria-label="API base URL" />
+        <input id="apiKey" type="password" autocomplete="off" placeholder="X-API-Key" aria-label="API key" />
+        <input id="period" inputmode="numeric" placeholder="2026-09" aria-label="Period" />
+        <button id="loadButton" type="submit">Load data</button>
+      </form>
+      <p class="status" id="status">Enter a viewer API key to load Management data.</p>
+      <div class="cards" id="cards"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Available endpoints</h2>
+      <div class="endpoint-grid">
+        <div class="endpoint"><strong>Combined snapshot</strong><code>GET /api/v1/management/snapshot</code></div>
+        <div class="endpoint"><strong>Dashboard</strong><code>GET /api/v1/management/dashboard</code></div>
+        <div class="endpoint"><strong>Management report</strong><code>GET /api/v1/management/report</code></div>
+        <div class="endpoint"><strong>Report filters</strong><code>GET /api/v1/management/filters</code></div>
+      </div>
+      <p class="meta">All Management endpoints require <code>X-API-Key</code>. See <a href="/openapi.yaml" target="_blank" rel="noopener">openapi.yaml</a> for integration details.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Response</h2>
+      <pre class="raw" id="output">No Management data loaded yet.</pre>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const form = document.getElementById('viewerForm');
+      const baseInput = document.getElementById('baseUrl');
+      const keyInput = document.getElementById('apiKey');
+      const periodInput = document.getElementById('period');
+      const button = document.getElementById('loadButton');
+      const status = document.getElementById('status');
+      const cards = document.getElementById('cards');
+      const output = document.getElementById('output');
+
+      baseInput.value = window.location.origin;
+
+      function valueAt(object, candidates) {
+        for (const candidate of candidates) {
+          const parts = candidate.split('.');
+          let current = object;
+          for (const part of parts) current = current && current[part];
+          if (current !== undefined && current !== null) return current;
+        }
+        return null;
+      }
+
+      function addCard(label, value) {
+        if (value === null || value === undefined) return;
+        const el = document.createElement('div');
+        el.className = 'card';
+        const labelEl = document.createElement('span');
+        const valueEl = document.createElement('b');
+        labelEl.textContent = label;
+        valueEl.textContent = typeof value === 'number' ? value.toLocaleString() : String(value);
+        el.append(labelEl, valueEl);
+        cards.appendChild(el);
+      }
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const base = baseInput.value.trim().replace(/\/+$/, '');
+        const apiKey = keyInput.value.trim();
+        const period = periodInput.value.trim();
+
+        cards.innerHTML = '';
+        output.textContent = '';
+        status.className = 'status';
+
+        if (!base || !apiKey) {
+          status.textContent = 'API URL and API key are required.';
+          status.className = 'status error';
+          return;
+        }
+        if (period && !/^\d{4}-\d{2}$/.test(period)) {
+          status.textContent = 'Period must use YYYY-MM.';
+          status.className = 'status error';
+          return;
+        }
+
+        button.disabled = true;
+        status.textContent = 'Loading read-only Management data...';
+        try {
+          const query = period ? `?period=${encodeURIComponent(period)}` : '';
+          const response = await fetch(`${base}/api/v1/management/snapshot${query}`, {
+            method: 'GET',
+            headers: { 'X-API-Key': apiKey, 'Accept': 'application/json' }
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(body.message || `Request failed (${response.status}).`);
+
+          const dashboard = body?.data?.dashboard || {};
+          const report = body?.data?.report || {};
+          const budget = report?.budget || dashboard?.budget || {};
+
+          addCard('Assigned budget', valueAt(budget, ['assigned', 'assignedBudget', 'totalAssigned']));
+          addCard('Committed', valueAt(budget, ['committed', 'committedBudget', 'totalCommitted']));
+          addCard('Executed', valueAt(budget, ['executed', 'executedBudget', 'totalExecuted']));
+          addCard('Paid', valueAt(budget, ['paid', 'paidAmount', 'totalPaid']));
+          addCard('Available', valueAt(budget, ['available', 'availableBudget', 'totalAvailable']));
+          addCard('Overdue approvals', valueAt(report, ['overdueApprovals', 'sla.overdue', 'approvals.overdue']));
+
+          output.textContent = JSON.stringify(body, null, 2);
+          status.textContent = `Management data loaded at ${new Date().toLocaleString()}.`;
+          status.className = 'status ok';
+        } catch (error) {
+          output.textContent = '';
+          status.textContent = error.message || 'Unable to load Management data.';
+          status.className = 'status error';
+        } finally {
+          button.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
