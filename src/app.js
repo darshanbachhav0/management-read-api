@@ -27,6 +27,7 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:"],
+      fontSrc: ["'self'", "data:"],
       connectSrc: ["'self'"],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"]
@@ -35,61 +36,56 @@ app.use(helmet({
 }));
 app.use(morgan(config.nodeEnv === "production" ? "combined" : "dev"));
 
-// Allow server-to-server requests, same-origin browser requests, and explicitly
-// configured external browser origins. The API key is still required for data.
 app.use(cors((req, callback) => {
   const corsOptions = {
     origin(origin, originCallback) {
-    if (!origin) return originCallback(null, true);
-
-    const forwardedProto = String(req.get("x-forwarded-proto") || "").split(",")[0].trim();
-    const protocol = forwardedProto || req.protocol;
-    const host = req.get("host");
-    const sameOrigin = host ? `${protocol}://${host}` : "";
-
-    if (origin === sameOrigin || config.allowedOrigins.includes(origin)) {
-      return originCallback(null, true);
-    }
-
-    const error = new Error("CORS origin is not allowed.");
-    error.status = 403;
-    return originCallback(error);
-  },
-  methods: ["GET", "HEAD", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
-  credentials: false,
-  maxAge: 600
+      if (!origin) return originCallback(null, true);
+      const forwardedProto = String(req.get("x-forwarded-proto") || "").split(",")[0].trim();
+      const protocol = forwardedProto || req.protocol;
+      const host = req.get("host");
+      const sameOrigin = host ? `${protocol}://${host}` : "";
+      if (origin === sameOrigin || config.allowedOrigins.includes(origin)) return originCallback(null, true);
+      const error = new Error("CORS origin is not allowed.");
+      error.status = 403;
+      return originCallback(error);
+    },
+    methods: ["GET", "HEAD", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
+    credentials: false,
+    maxAge: 600
   };
   callback(null, corsOptions);
 }));
 
 app.use(express.json({ limit: "50kb" }));
-
 app.use((req, res, next) => {
   res.set("Cache-Control", "private, no-store");
   res.set("X-Content-Type-Options", "nosniff");
   next();
 });
 
-// Public landing/viewer and API description.
 app.get("/", (_req, res) => res.sendFile(path.join(publicDir, "index.html")));
 app.get("/viewer", (_req, res) => res.sendFile(path.join(publicDir, "index.html")));
 app.get("/openapi.yaml", (_req, res) => res.sendFile(path.join(projectRoot, "openapi.yaml")));
-app.get("/favicon.ico", (_req, res) => res.status(204).end());
+app.get("/favicon.svg", (_req, res) => res.sendFile(path.join(publicDir, "favicon.svg")));
+app.get("/favicon.ico", (_req, res) => res.redirect(302, "/favicon.svg"));
 
 app.get("/health", (_req, res) => res.json({
   status: "ok",
   service: "uma-management-read-api",
+  version: "1.2.0",
   readOnly: true
 }));
 
 app.get("/ready", async (_req, res) => {
-  try {
-    const upstream = await financeReadiness();
-    res.json({ status: "ready", upstream });
-  } catch (error) {
-    res.status(503).json({ status: "not_ready", message: error.message });
-  }
+  const upstream = await financeReadiness();
+  const ready = upstream.reachable && upstream.authenticated;
+  res.status(ready ? 200 : 503).json({
+    status: ready ? "ready" : "not_ready",
+    service: "uma-management-read-api",
+    readOnly: true,
+    upstream
+  });
 });
 
 app.use("/api/v1", rateLimit({
@@ -124,7 +120,8 @@ app.use((error, _req, res, _next) => {
   if (config.nodeEnv !== "test") console.error(error);
   res.status(safeStatus).json({
     error: safeStatus >= 500 ? "Gateway Error" : "Request Error",
-    message: error?.message || "Unexpected error."
+    message: error?.message || "Unexpected error.",
+    ...(error?.hint ? { hint: error.hint } : {})
   });
 });
 

@@ -21,10 +21,37 @@ function csv(name) {
     .filter(Boolean);
 }
 
-const financeApiBaseUrl = required("FINANCE_API_BASE_URL").replace(/\/+$/, "");
-if (!/^https?:\/\//i.test(financeApiBaseUrl)) {
-  throw new Error("FINANCE_API_BASE_URL must start with http:// or https://");
+function normalizeFinanceUrl(raw) {
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error("FINANCE_API_BASE_URL must be a valid absolute URL.");
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("FINANCE_API_BASE_URL must start with http:// or https://");
+  }
+
+  parsed.hash = "";
+  parsed.search = "";
+  const pathname = parsed.pathname.replace(/\/+$/, "");
+  const hasApiSuffix = /\/api$/i.test(pathname);
+  const rootPath = hasApiSuffix ? pathname.replace(/\/api$/i, "") : pathname;
+  const originBase = `${parsed.origin}${rootPath}`.replace(/\/+$/, "");
+  const apiBase = hasApiSuffix
+    ? `${parsed.origin}${pathname}`
+    : `${originBase}/api`;
+
+  return {
+    configured: raw.replace(/\/+$/, ""),
+    originBase,
+    apiBase: apiBase.replace(/\/+$/, ""),
+    hostname: parsed.hostname
+  };
 }
+
+const financeUrl = normalizeFinanceUrl(required("FINANCE_API_BASE_URL"));
+const localHostnames = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
 
 export const config = Object.freeze({
   port: positiveInteger("PORT", 8088),
@@ -34,7 +61,11 @@ export const config = Object.freeze({
   rateLimitPerMinute: positiveInteger("RATE_LIMIT_PER_MINUTE", 120),
   cacheTtlMs: positiveInteger("CACHE_TTL_SECONDS", 30) * 1000,
   requestTimeoutMs: positiveInteger("REQUEST_TIMEOUT_MS", 10000),
-  financeApiBaseUrl,
+  financeApiBaseUrl: financeUrl.apiBase,
+  financeOriginBaseUrl: financeUrl.originBase,
+  financeConfiguredUrl: financeUrl.configured,
+  financeHostname: financeUrl.hostname,
+  financeUsesLocalhost: localHostnames.has(financeUrl.hostname.toLowerCase()),
   financeServiceEmail: required("FINANCE_SERVICE_EMAIL"),
   financeServicePassword: required("FINANCE_SERVICE_PASSWORD"),
   financeRequiredRole: String(process.env.FINANCE_REQUIRED_ROLE || "MANAGEMENT").trim().toUpperCase()

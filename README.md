@@ -1,20 +1,22 @@
 # UMA Management Read API
 
-Separate, read-only API gateway for sharing the same Management dashboard/report data that already exists in UMA Finance.
+Professional, read-only gateway for sharing the same Management dashboard and report data produced by the UMA Finance system.
 
-## What changed in the Render-ready version
+## Version 1.2.0
 
-- `/` now opens a built-in Management API viewer instead of returning 404.
-- `/favicon.ico` returns 204 instead of creating noisy 404 logs.
-- `/openapi.yaml` is publicly available for integration documentation.
-- `render.yaml` is included for Render Blueprint deployment.
-- Same-origin browser calls are allowed automatically; external browser origins still require `ALLOWED_ORIGINS`.
-- The service continues to expose only read-only Management GET endpoints.
+This version improves both Render connectivity and the Management viewer:
+
+- Professional responsive Management dashboard at `/`.
+- Live connection status for the upstream UMA Finance backend.
+- `FINANCE_API_BASE_URL` may now be either the Finance root URL or the `/api` URL.
+- Clear diagnostics for localhost, DNS, connection, credential, and Management-role failures.
+- Responsive KPI cards, budget position, spend trend, CAPEX/OPEX, top areas, workflow, payables, SLA, period close, and recent requests.
+- No financial write operations are exposed.
 
 ## Architecture
 
 ```text
-External viewer / other project
+External viewer / another application
         |
         | X-API-Key
         v
@@ -22,23 +24,52 @@ UMA Management Read API (Render)
         |
         | private Management service credentials / JWT
         v
-Existing UMA Finance Backend
+UMA Finance Backend
         |
         v
-Management dashboard + report services
+Existing Management dashboard + report logic
 ```
 
-## Important before Render deployment
+The Management gateway does **not** connect directly to MongoDB and does not duplicate Finance calculations.
 
-`FINANCE_API_BASE_URL=http://localhost:5000/api` will NOT work on Render. Render cannot reach the backend running on your Windows PC.
+## Why "Unable to reach UMA Finance API" happens
 
-The existing Finance backend must be reachable from Render, for example:
+The Management service can be healthy while the Finance backend is unreachable.
+
+Most commonly on Render, `FINANCE_API_BASE_URL` was configured as `localhost` or the main Finance backend has not been deployed publicly/private-network reachable.
+
+Use either of these forms:
 
 ```text
-https://finance-api.your-domain.com/api
+FINANCE_API_BASE_URL=https://your-finance-backend.onrender.com
 ```
 
-or, if the Finance backend is also on Render, use its public HTTPS URL or appropriate private service address.
+or:
+
+```text
+FINANCE_API_BASE_URL=https://your-finance-backend.onrender.com/api
+```
+
+Version 1.2.0 normalizes both automatically.
+
+Do **not** use this on Render:
+
+```text
+FINANCE_API_BASE_URL=http://localhost:5000
+```
+
+`localhost` would refer to the Management Render container itself, not your UMA computer.
+
+## Required Finance service account
+
+Create a dedicated active user in the main Finance system:
+
+```text
+Name: Management View API
+Role: Management
+```
+
+Use a strong unique password. The external API consumer must never receive this account password.
 
 ## Local setup
 
@@ -46,19 +77,19 @@ or, if the Finance backend is also on Render, use its public HTTPS URL or approp
 npm install
 ```
 
-Copy environment variables:
+Copy the environment template:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Generate an external API key:
+Generate a viewer API key:
 
 ```bash
 npm run generate:key
 ```
 
-Configure `.env`, then:
+Start:
 
 ```bash
 npm start
@@ -70,18 +101,73 @@ Open:
 http://localhost:8088/
 ```
 
-Health endpoints:
+## Render deployment
+
+Push this folder to its own GitHub repository, then create a Render Blueprint or Web Service.
+
+`render.yaml` is already included.
+
+Required Render environment variables:
+
+```text
+FINANCE_API_BASE_URL=https://YOUR-FINANCE-BACKEND
+FINANCE_SERVICE_EMAIL=management-view-api@uma.edu.pe
+FINANCE_SERVICE_PASSWORD=<strong dedicated password>
+VIEWER_API_KEYS=<generated viewer key>
+```
+
+The following are already declared by `render.yaml`:
+
+```text
+NODE_ENV=production
+FINANCE_REQUIRED_ROLE=MANAGEMENT
+RATE_LIMIT_PER_MINUTE=120
+CACHE_TTL_SECONDS=30
+REQUEST_TIMEOUT_MS=10000
+```
+
+Render supplies `PORT` automatically.
+
+### Important
+
+If the main UMA Finance backend is not deployed/reachable from Render, this Management API cannot display live data. Deploy the Finance backend first or provide a reachable internal/public URL.
+
+## Health and diagnostics
+
+Gateway health:
 
 ```text
 GET /health
+```
+
+This only confirms that the Management service itself is running.
+
+Full readiness:
+
+```text
 GET /ready
 ```
 
-`/health` proves this gateway is running. `/ready` additionally verifies that the UMA Finance backend is reachable.
+When connected:
 
-## Read-only endpoints
+```json
+{
+  "status": "ready",
+  "service": "uma-management-read-api",
+  "readOnly": true,
+  "upstream": {
+    "reachable": true,
+    "authenticated": true,
+    "role": "MANAGEMENT"
+  }
+}
+```
 
-All endpoints below require `X-API-Key` or `Authorization: Bearer <viewer-key>`.
+When not connected, `/ready` returns a safe `hint` explaining the likely configuration problem without exposing passwords or tokens.
+
+## Read-only Management endpoints
+
+All Management endpoints require `X-API-Key` or `Authorization: Bearer <viewer-key>`.
 
 ```text
 GET /api/v1/management/dashboard
@@ -90,171 +176,74 @@ GET /api/v1/management/filters
 GET /api/v1/management/snapshot
 ```
 
-The snapshot endpoint is easiest for another dashboard:
+Recommended endpoint for another visualization project:
 
 ```http
 GET /api/v1/management/snapshot?period=2026-09
 X-API-Key: YOUR_VIEWER_KEY
 ```
 
-Optional report filters:
+Supported report filters:
 
 ```text
 period
- dateFrom
- dateTo
- currency
- requestType
- area
- costCenter
- project
+dateFrom
+dateTo
+currency
+requestType
+area
+costCenter
+project
 ```
 
-## Render deployment - recommended method
+## Security model
 
-### 1. Push this project to its own GitHub repository
-
-From the extracted project folder:
-
-```bash
-git init
-git add .
-git commit -m "UMA Management Read API - Render ready"
-git branch -M main
-git remote add origin https://github.com/YOUR_USER/uma-management-read-api.git
-git push -u origin main
-```
-
-Do not commit `.env`.
-
-### 2. Create the Render service
-
-In Render:
-
-1. Choose **New > Blueprint** if you want Render to use `render.yaml`, or **New > Web Service** and select the repository.
-2. Build command: `npm install`
-3. Start command: `npm start`
-4. Health check path: `/health`
-
-### 3. Add Render environment variables
-
-Required:
+The API gateway accepts only:
 
 ```text
-FINANCE_API_BASE_URL=https://YOUR-FINANCE-BACKEND/api
-FINANCE_SERVICE_EMAIL=management-view-api@uma.edu.pe
-FINANCE_SERVICE_PASSWORD=<strong dedicated password>
-VIEWER_API_KEYS=<long generated key>
-FINANCE_REQUIRED_ROLE=MANAGEMENT
-NODE_ENV=production
+GET
+HEAD
+OPTIONS
 ```
 
-Optional:
+It does not expose routes for:
+
+- approvals
+- request edits
+- budget decisions
+- accounting posting
+- BBVA generation
+- payment confirmation
+- reconciliation
+- supplier editing
+- user administration
+- master-data modification
+
+The viewer API key is separate from the private Finance Management credentials.
+
+## Browser/CORS access
+
+The built-in viewer calls the API from the same Render origin and needs no extra CORS configuration.
+
+If another browser application calls this gateway directly, set exact origins in:
 
 ```text
-ALLOWED_ORIGINS=https://the-other-dashboard.example.com
-RATE_LIMIT_PER_MINUTE=120
-CACHE_TTL_SECONDS=30
-REQUEST_TIMEOUT_MS=10000
+ALLOWED_ORIGINS=https://other-dashboard.example.com
 ```
 
-Render supplies `PORT` automatically. Do not hardcode a Render port.
+For a public/browser application, prefer storing the viewer API key on that application's backend instead of embedding a permanent key in downloadable JavaScript.
 
-### 4. Test after deployment
+## What to share with another person
 
-Suppose Render gives:
+Share only:
 
-```text
-https://uma-management-read-api.onrender.com
-```
+1. The Render Management API URL.
+2. A viewer API key.
+3. `/openapi.yaml`.
 
-Open:
+Never share:
 
-```text
-https://uma-management-read-api.onrender.com/
-```
-
-You should see the built-in viewer.
-
-Check gateway health:
-
-```text
-https://uma-management-read-api.onrender.com/health
-```
-
-Then check upstream readiness:
-
-```text
-https://uma-management-read-api.onrender.com/ready
-```
-
-Expected `/ready` result when the Finance API credentials and URL are correct:
-
-```json
-{
-  "status": "ready",
-  "upstream": {
-    "status": "ok"
-  }
-}
-```
-
-If `/health` works but `/ready` returns 503, the gateway itself is deployed correctly but Render cannot authenticate to/reach the main UMA Finance backend.
-
-## Sharing with another person
-
-Give the consumer only:
-
-1. Render API URL
-2. Viewer API key
-3. `https://YOUR-RENDER-URL/openapi.yaml`
-
-Do not share:
-
-- Finance service-account password
-- Finance JWT
-- MongoDB connection string
-- Render secret environment values
-
-Example JavaScript from another backend:
-
-```js
-const response = await fetch(
-  "https://uma-management-read-api.onrender.com/api/v1/management/snapshot?period=2026-09",
-  {
-    headers: {
-      "X-API-Key": process.env.UMA_MANAGEMENT_API_KEY
-    }
-  }
-);
-
-const body = await response.json();
-```
-
-## Browser access and CORS
-
-The viewer hosted by this API can call the API on the same origin automatically.
-
-If a different browser application calls the API directly, add its exact URL to `ALLOWED_ORIGINS`, for example:
-
-```text
-ALLOWED_ORIGINS=https://partner-dashboard.onrender.com,https://management.example.edu.pe
-```
-
-For a public application, prefer server-to-server use because browser API keys can be inspected by users.
-
-## Read-only guarantees
-
-The gateway exposes no Finance mutation endpoints. It does not expose request creation/editing, approvals, Budget actions, Accounting posting, Treasury actions, BBVA generation, payment confirmation, reconciliation, user management, or master-data editing.
-
-Only `GET`, `HEAD`, and `OPTIONS` are accepted below `/api/v1`.
-
-## Production security
-
-- Use a dedicated Finance Management service account.
-- Use a unique long `VIEWER_API_KEYS` value per consumer where possible.
-- Keep Finance credentials only in Render environment variables.
-- Restrict `ALLOWED_ORIGINS` if browser consumption is needed.
-- Rotate a viewer key immediately if it is exposed publicly.
-- HTTPS is provided by Render.
-- Do not put `.env` into GitHub.
+- `FINANCE_SERVICE_PASSWORD`
+- Finance JWTs
+- MongoDB credentials
+- Render secret values
